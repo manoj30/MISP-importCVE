@@ -13,7 +13,7 @@ import random
 import datetime
 
 def init(url, key):
-    return PyMISP(url, key, misp_verifycert, 'json', debug=False)
+    return PyMISP(url, key, misp_verifycert, debug=False)
 
 misp = init(misp_url, misp_key)
 
@@ -44,7 +44,7 @@ skip = False
 i = 0
 j = 0
 for file in files:
-	if sys.argv[1] == "u":
+	if  len(sys.argv) > 1 and sys.argv[1] == "u":
 		dirname = "nvd_recent"
 	else:
 		dirname = "nvd/"
@@ -87,30 +87,42 @@ for file in files:
 				continue
 
 			#Aggiorno eventuale evento esistente
-			if len(result['response']) != 0:
-				cve_id = result['response'][0]['id']
+			if len(result) != 0:
+				cve_id = result[0]['id']
 				event = misp.get_event(cve_id)
 				if event['Event']['published'] == False:
-					misp.fast_publish(cve_id)
+					misp.publish(cve_id)
 				print(cve_info + " already exists: " + event['Event']['uuid'] + "\n")
 				j = j + 1
 			else:
 				cve_date = cve['publishedDate']
-				event = misp.new_event(cve_distrib, cve_threat, cve_analysis, cve_info, cve_date)
-				misp.fast_publish(event['Event']['id'])
+				# event = misp.new_event(cve_distrib, cve_threat, cve_analysis, cve_info, cve_date)
+                event = MISPEvent()
+                event.distribution = cve_distrib
+                event.threat_level_id = cve_threat
+                event.analysis = cve_analysis
+                event.info = cve_info
+                event.date = cve_date
+                event = misp.add_event(event, pythonify=True)
+				
+                # misp.fast_publish(event['Event']['id'])
+                misp.publish(event)
 				print(cve_info + " added: " + event['Event']['uuid'] + "\n")
 				i = i + 1
 
-			#Aggiungo la descrizione dell'evento
-			misp.add_named_attribute(event, 'comment', cve_comment)
+			# Add decription and CVE id as attributes
+			# misp.add_named_attribute(event, 'comment', cve_comment)
+            misp.add_attribute(event, {'category': 'External analysis', 'type': 'vulnerability', 'value': cve_info})
+            misp.add_attribute(event, {'category': 'External analysis', 'type': 'comment', 'value': cve_comment})
 			print("CVE description added to " + cve_info)
 
-			#Aggiungo i link di riferimento del cve
+			#Add references as link
 			try:
 				for ref in cve['cve']['references']['reference_data']:
 					cve_link = str(ref['url'])
-					misp.add_named_attribute(event, 'link', cve_link)
-				print("Added " + len(cve['cve']['references']['reference_data']) + " links into event " + cve_info + "\n")
+					# misp.add_named_attribute(event, 'link', cve_link)
+                    misp.add_attribute(event, {'category': 'External analysis', 'type': 'link', 'value': cve_link})
+				print("Added " + str(len(cve['cve']['references']['reference_data'])) + " links into event " + cve_info + "\n")
 			except:
 				print("No references added to " + cve_info + "\n")
 
@@ -123,8 +135,12 @@ for file in files:
 						cve_malware_platform = str(vendor['vendor_name']) + " " + str(product['product_name'])
 						tag_text = "ms-caro-malware:malware-platform=" + cve_malware_platform
 						color = "%06x" % random.randint(0, 0xFFFFFF)
-						misp.new_tag(tag_text, colour=color)
-						misp.tag(event['Event']['uuid'], tag_text)
+						# misp.new_tag(tag_text, colour=color)
+						# misp.tag(event['Event']['uuid'], tag_text)
+                        tag = MISPTag()
+                        tag.name = tag_text
+                        tag.colour = color
+                        misp.add_tag(event, tag)
 						print("Added tag to " + cve_info + ": " + cve_malware_platform + "\n")
 			except:
 				print("No malware platform added to " + cve_info + "\n")
